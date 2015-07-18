@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,9 +54,9 @@ func Run(query string, ses query.Session) {
 	}()
 	fmt.Printf("\n")
 	c := make(chan interface{}, 5)
-	go ses.ExecInput(query, c, 100)
+	go ses.Execute(query, c, 100)
 	for res := range c {
-		fmt.Print(ses.ToText(res))
+		fmt.Print(ses.Format(res))
 		nResults++
 	}
 	if nResults > 0 {
@@ -118,39 +119,58 @@ func Repl(h *graph.Handle, queryLanguage string, cfg *config.Config) error {
 		}
 
 		if code == "" {
-			switch {
-			case strings.HasPrefix(line, ":debug"):
-				ses.ToggleDebug()
-				fmt.Println("Debug Toggled")
+			cmd, args := splitLine(line)
+
+			switch cmd {
+			case ":debug":
+				args = strings.TrimSpace(args)
+				var debug bool
+				switch args {
+				case "t":
+					debug = true
+				case "f":
+					// Do nothing.
+				default:
+					debug, err = strconv.ParseBool(args)
+					if err != nil {
+						fmt.Printf("Error: cannot parse %q as a valid boolean - acceptable values: 't'|'true' or 'f'|'false'\n", args)
+						continue
+					}
+				}
+				ses.Debug(debug)
+				fmt.Printf("Debug set to %t\n", debug)
 				continue
 
-			case strings.HasPrefix(line, ":a"):
-				quad, err := cquads.Parse(line[3:])
-				if !quad.IsValid() {
-					if err != nil {
-						fmt.Printf("not a valid quad: %v\n", err)
-					}
+			case ":a":
+				quad, err := cquads.Parse(args)
+				if err != nil {
+					fmt.Printf("Error: not a valid quad: %v\n", err)
 					continue
 				}
+
 				h.QuadWriter.AddQuad(quad)
 				continue
 
-			case strings.HasPrefix(line, ":d"):
-				quad, err := cquads.Parse(line[3:])
-				if !quad.IsValid() {
-					if err != nil {
-						fmt.Printf("not a valid quad: %v\n", err)
-					}
+			case ":d":
+				quad, err := cquads.Parse(args)
+				if err != nil {
+					fmt.Printf("Error: not a valid quad: %v\n", err)
 					continue
 				}
 				h.QuadWriter.RemoveQuad(quad)
 				continue
+
+			default:
+				if cmd[0] == ':' {
+					fmt.Printf("Unknown command: %q\n", cmd)
+					continue
+				}
 			}
 		}
 
 		code += line
 
-		result, err := ses.InputParses(code)
+		result, err := ses.Parse(code)
 		switch result {
 		case query.Parsed:
 			Run(code, ses)
@@ -161,6 +181,26 @@ func Repl(h *graph.Handle, queryLanguage string, cfg *config.Config) error {
 		case query.ParseMore:
 		}
 	}
+}
+
+// Splits a line into a command and its arguments
+// e.g. ":a b c d ." will be split into ":a" and " b c d ."
+func splitLine(line string) (string, string) {
+	var command, arguments string
+
+	line = strings.TrimSpace(line)
+
+	// An empty line/a line consisting of whitespace contains neither command nor arguments
+	if len(line) > 0 {
+		command = strings.Fields(line)[0]
+
+		// A line containing only a command has no arguments
+		if len(line) > len(command) {
+			arguments = line[len(command):]
+		}
+	}
+
+	return command, arguments
 }
 
 func terminal(path string) (*liner.State, error) {

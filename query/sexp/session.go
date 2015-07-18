@@ -17,6 +17,7 @@ package sexp
 // Defines a running session of the sexp query language.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -36,11 +37,11 @@ func NewSession(qs graph.QuadStore) *Session {
 	return &s
 }
 
-func (s *Session) ToggleDebug() {
-	s.debug = !s.debug
+func (s *Session) Debug(ok bool) {
+	s.debug = ok
 }
 
-func (s *Session) InputParses(input string) (query.ParseResult, error) {
+func (s *Session) Parse(input string) (query.ParseResult, error) {
 	var parenDepth int
 	for i, x := range input {
 		if x == '(' {
@@ -66,7 +67,7 @@ func (s *Session) InputParses(input string) (query.ParseResult, error) {
 	return query.ParseFail, errors.New("invalid syntax")
 }
 
-func (s *Session) ExecInput(input string, out chan interface{}, limit int) {
+func (s *Session) Execute(input string, out chan interface{}, limit int) {
 	it := BuildIteratorTreeForQuery(s.qs, input)
 	newIt, changed := it.Optimize()
 	if changed {
@@ -74,7 +75,12 @@ func (s *Session) ExecInput(input string, out chan interface{}, limit int) {
 	}
 
 	if s.debug {
-		fmt.Println(it.DebugString(0))
+		b, err := json.MarshalIndent(it.Describe(), "", "  ")
+		if err != nil {
+			fmt.Printf("failed to format description: %v", err)
+		} else {
+			fmt.Printf("%s", b)
+		}
 	}
 	nResults := 0
 	for graph.Next(it) {
@@ -98,7 +104,7 @@ func (s *Session) ExecInput(input string, out chan interface{}, limit int) {
 	close(out)
 }
 
-func (s *Session) ToText(result interface{}) string {
+func (s *Session) Format(result interface{}) string {
 	out := fmt.Sprintln("****")
 	tags := result.(map[string]graph.Value)
 	tagKeys := make([]string, len(tags))

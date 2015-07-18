@@ -15,7 +15,6 @@
 package writer
 
 import (
-	"sync"
 	"time"
 
 	"github.com/google/cayley/graph"
@@ -27,65 +26,92 @@ func init() {
 }
 
 type Single struct {
-	nextID int64
-	qs     graph.QuadStore
-	mut    sync.Mutex
+	currentID  graph.PrimaryKey
+	qs         graph.QuadStore
+	ignoreOpts graph.IgnoreOpts
 }
 
 func NewSingleReplication(qs graph.QuadStore, opts graph.Options) (graph.QuadWriter, error) {
-	horizon := qs.Horizon()
-	rep := &Single{nextID: horizon + 1, qs: qs}
-	if horizon <= 0 {
-		rep.nextID = 1
-	}
-	return rep, nil
-}
+	var (
+		ignoreMissing   bool
+		ignoreDuplicate bool
+		err             error
+	)
 
-func (s *Single) AcquireNextID() int64 {
-	s.mut.Lock()
-	defer s.mut.Unlock()
-	id := s.nextID
-	s.nextID++
-	return id
+	if *graph.IgnoreMissing {
+		ignoreMissing = true
+	} else {
+		ignoreMissing, _, err = opts.BoolKey("ignore_missing")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if *graph.IgnoreDup {
+		ignoreDuplicate = true
+	} else {
+		ignoreDuplicate, _, err = opts.BoolKey("ignore_duplicate")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &Single{
+		currentID: qs.Horizon(),
+		qs:        qs,
+		ignoreOpts: graph.IgnoreOpts{
+			IgnoreDup:     ignoreDuplicate,
+			IgnoreMissing: ignoreMissing,
+		},
+	}, nil
 }
 
 func (s *Single) AddQuad(q quad.Quad) error {
 	deltas := make([]graph.Delta, 1)
 	deltas[0] = graph.Delta{
-		ID:        s.AcquireNextID(),
+		ID:        s.currentID.Next(),
 		Quad:      q,
 		Action:    graph.Add,
 		Timestamp: time.Now(),
 	}
-	return s.qs.ApplyDeltas(deltas)
+	return s.qs.ApplyDeltas(deltas, s.ignoreOpts)
 }
 
 func (s *Single) AddQuadSet(set []quad.Quad) error {
 	deltas := make([]graph.Delta, len(set))
 	for i, q := range set {
 		deltas[i] = graph.Delta{
-			ID:        s.AcquireNextID(),
+			ID:        s.currentID.Next(),
 			Quad:      q,
 			Action:    graph.Add,
 			Timestamp: time.Now(),
 		}
 	}
-	s.qs.ApplyDeltas(deltas)
-	return nil
+
+	return s.qs.ApplyDeltas(deltas, s.ignoreOpts)
 }
 
 func (s *Single) RemoveQuad(q quad.Quad) error {
 	deltas := make([]graph.Delta, 1)
 	deltas[0] = graph.Delta{
-		ID:        s.AcquireNextID(),
+		ID:        s.currentID.Next(),
 		Quad:      q,
 		Action:    graph.Delete,
 		Timestamp: time.Now(),
 	}
-	return s.qs.ApplyDeltas(deltas)
+	return s.qs.ApplyDeltas(deltas, s.ignoreOpts)
 }
 
 func (s *Single) Close() error {
 	// Nothing to clean up locally.
 	return nil
+}
+
+func (s *Single) ApplyTransaction(t *graph.Transaction) error {
+	ts := time.Now()
+	for i := 0; i < len(t.Deltas); i++ {
+		t.Deltas[i].ID = s.currentID.Next()
+		t.Deltas[i].Timestamp = ts
+	}
+	return s.qs.ApplyDeltas(t.Deltas, s.ignoreOpts)
 }

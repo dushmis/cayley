@@ -16,7 +16,6 @@ package mongo
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/barakmich/glog"
 	"gopkg.in/mgo.v2"
@@ -40,19 +39,13 @@ type Iterator struct {
 	constraint bson.M
 	collection string
 	result     graph.Value
+	err        error
 }
 
 func NewIterator(qs *QuadStore, collection string, d quad.Direction, val graph.Value) *Iterator {
 	name := qs.NameOf(val)
 
 	constraint := bson.M{d.String(): name}
-
-	size, err := qs.db.C(collection).Find(constraint).Count()
-	if err != nil {
-		// FIXME(kortschak) This should be passed back rather than just logging.
-		glog.Errorln("Trouble getting size for iterator! ", err)
-		return nil
-	}
 
 	return &Iterator{
 		uid:        iterator.NextUID(),
@@ -61,29 +54,29 @@ func NewIterator(qs *QuadStore, collection string, d quad.Direction, val graph.V
 		collection: collection,
 		qs:         qs,
 		dir:        d,
-		iter:       qs.db.C(collection).Find(constraint).Iter(),
-		size:       int64(size),
+		iter:       nil,
+		size:       -1,
 		hash:       val.(string),
 		isAll:      false,
 	}
 }
 
-func NewAllIterator(qs *QuadStore, collection string) *Iterator {
-	size, err := qs.db.C(collection).Count()
-	if err != nil {
-		// FIXME(kortschak) This should be passed back rather than just logging.
-		glog.Errorln("Trouble getting size for iterator! ", err)
-		return nil
+func (it *Iterator) makeMongoIterator() *mgo.Iter {
+	if it.isAll {
+		return it.qs.db.C(it.collection).Find(nil).Iter()
 	}
+	return it.qs.db.C(it.collection).Find(it.constraint).Iter()
+}
 
+func NewAllIterator(qs *QuadStore, collection string) *Iterator {
 	return &Iterator{
 		uid:        iterator.NextUID(),
 		qs:         qs,
 		dir:        quad.Any,
 		constraint: nil,
 		collection: collection,
-		iter:       qs.db.C(collection).Find(nil).Iter(),
-		size:       int64(size),
+		iter:       nil,
+		size:       -1,
 		hash:       "",
 		isAll:      true,
 	}
@@ -94,13 +87,16 @@ func (it *Iterator) UID() uint64 {
 }
 
 func (it *Iterator) Reset() {
-	it.iter.Close()
+	it.Close()
 	it.iter = it.qs.db.C(it.collection).Find(it.constraint).Iter()
 
 }
 
-func (it *Iterator) Close() {
-	it.iter.Close()
+func (it *Iterator) Close() error {
+	if it.iter != nil {
+		return it.iter.Close()
+	}
+	return nil
 }
 
 func (it *Iterator) Tagger() *graph.Tagger {
@@ -134,10 +130,14 @@ func (it *Iterator) Next() bool {
 		Added   []int64 `bson:"Added"`
 		Deleted []int64 `bson:"Deleted"`
 	}
+	if it.iter == nil {
+		it.iter = it.makeMongoIterator()
+	}
 	found := it.iter.Next(&result)
 	if !found {
 		err := it.iter.Err()
 		if err != nil {
+			it.err = err
 			glog.Errorln("Error Nexting Iterator: ", err)
 		}
 		return false
@@ -149,8 +149,8 @@ func (it *Iterator) Next() bool {
 	return true
 }
 
-func (it *Iterator) ResultTree() *graph.ResultTree {
-	return graph.NewResultTree(it.Result())
+func (it *Iterator) Err() error {
+	return it.err
 }
 
 func (it *Iterator) Result() graph.Value {
@@ -161,7 +161,7 @@ func (it *Iterator) NextPath() bool {
 	return false
 }
 
-// No subiterators.
+// SubIterators returns no subiterators for a Mongo iterator.
 func (it *Iterator) SubIterators() []graph.Iterator {
 	return nil
 }
@@ -192,6 +192,13 @@ func (it *Iterator) Contains(v graph.Value) bool {
 }
 
 func (it *Iterator) Size() (int64, bool) {
+	if it.size == -1 {
+		var err error
+		it.size, err = it.qs.getSize(it.collection, it.constraint)
+		if err != nil {
+			it.err = err
+		}
+	}
 	return it.size, true
 }
 
@@ -213,9 +220,14 @@ func (it *Iterator) Type() graph.Type {
 func (it *Iterator) Sorted() bool                     { return true }
 func (it *Iterator) Optimize() (graph.Iterator, bool) { return it, false }
 
-func (it *Iterator) DebugString(indent int) string {
+func (it *Iterator) Describe() graph.Description {
 	size, _ := it.Size()
-	return fmt.Sprintf("%s(%s size:%d %s %s)", strings.Repeat(" ", indent), it.Type(), size, it.hash, it.name)
+	return graph.Description{
+		UID:  it.UID(),
+		Name: fmt.Sprintf("%s/%s", it.name, it.hash),
+		Type: it.Type(),
+		Size: size,
+	}
 }
 
 func (it *Iterator) Stats() graph.IteratorStats {
@@ -226,3 +238,5 @@ func (it *Iterator) Stats() graph.IteratorStats {
 		Size:         size,
 	}
 }
+
+var _ graph.Nexter = &Iterator{}

@@ -34,7 +34,7 @@ func (qs *store) ValueOf(s string) graph.Value {
 	return nil
 }
 
-func (qs *store) ApplyDeltas([]graph.Delta) error { return nil }
+func (qs *store) ApplyDeltas([]graph.Delta, graph.IgnoreOpts) error { return nil }
 
 func (qs *store) Quad(graph.Value) quad.Quad { return quad.Quad{} }
 
@@ -56,7 +56,7 @@ func (qs *store) NameOf(v graph.Value) string {
 
 func (qs *store) Size() int64 { return 0 }
 
-func (qs *store) Horizon() int64 { return 0 }
+func (qs *store) Horizon() graph.PrimaryKey { return graph.NewSequentialKey(0) }
 
 func (qs *store) DebugPrint() {}
 
@@ -73,3 +73,5 @@ func (qs *store) Close() {}
 func (qs *store) QuadDirection(graph.Value, quad.Direction) graph.Value { return 0 }
 
 func (qs *store) RemoveQuad(t quad.Quad) {}
+
+func (qs *store) Type() string { return "mockstore" }

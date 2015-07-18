@@ -108,12 +108,12 @@ func TestIteratorsAndNextResultOrderA(t *testing.T) {
 
 	all := qs.NodesAllIterator()
 
-	innerAnd := iterator.NewAnd()
+	innerAnd := iterator.NewAnd(qs)
 	innerAnd.AddSubIterator(iterator.NewLinksTo(qs, fixed2, quad.Predicate))
 	innerAnd.AddSubIterator(iterator.NewLinksTo(qs, all, quad.Object))
 
 	hasa := iterator.NewHasA(qs, innerAnd, quad.Subject)
-	outerAnd := iterator.NewAnd()
+	outerAnd := iterator.NewAnd(qs)
 	outerAnd.AddSubIterator(fixed)
 	outerAnd.AddSubIterator(hasa)
 
@@ -165,8 +165,11 @@ func TestLinksToOptimization(t *testing.T) {
 
 	v := newIt.(*Iterator)
 	vClone := v.Clone()
-	if vClone.DebugString(0) != v.DebugString(0) {
-		t.Fatal("Wrong iterator. Got ", vClone.DebugString(0))
+	origDesc := v.Describe()
+	cloneDesc := vClone.Describe()
+	origDesc.UID, cloneDesc.UID = 0, 0 // We are more strict now, so fake UID equality.
+	if !reflect.DeepEqual(cloneDesc, origDesc) {
+		t.Fatalf("Unexpected iterator description.\ngot: %#v\nexpect: %#v", cloneDesc, origDesc)
 	}
 	vt := vClone.Tagger()
 	if len(vt.Tags()) < 1 || vt.Tags()[0] != "foo" {
@@ -190,7 +193,7 @@ func TestRemoveQuad(t *testing.T) {
 	fixed2 := qs.FixedIterator()
 	fixed2.Add(qs.ValueOf("follows"))
 
-	innerAnd := iterator.NewAnd()
+	innerAnd := iterator.NewAnd(qs)
 	innerAnd.AddSubIterator(iterator.NewLinksTo(qs, fixed, quad.Subject))
 	innerAnd.AddSubIterator(iterator.NewLinksTo(qs, fixed2, quad.Predicate))
 

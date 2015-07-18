@@ -1,20 +1,11 @@
 <p align="center">
   <img src="static/branding/cayley_side.png?raw=true" alt="Cayley" />
 </p>
-Cayley is an open-source graph inspired by the graph database behind [Freebase](http://freebase.com) and Google's [Knowledge Graph](http://www.google.com/insidesearch/features/search/knowledge.html).
+Cayley is an open-source graph inspired by the graph database behind [Freebase](http://freebase.com) and Google's [Knowledge Graph](https://www.google.com/search/about/insidesearch/features/search/knowledge.html).
 
 Its goal is to be a part of the developer's toolbox where [Linked Data](http://linkeddata.org/) and graph-shaped data (semantic webs, social networks, etc) in general are concerned.
 
-[![Build Status](https://travis-ci.org/google/cayley.png?branch=master)](https://travis-ci.org/google/cayley)
-
-## What's new?
-* 2014-08-06:
-  * 0.3.1 Binary Release including:
-    * New Quad Parser (more strictly passing the [W3C spec](http://www.w3.org/TR/n-quads) and test suite)
-    * Automatic decompression of quad files
-  * Ruby and a Node.JS [client libraries](https://github.com/google/cayley/wiki/Client-APIs) from the community.
-  * Benchmarks
-  * [Large speedups on HEAD](https://github.com/google/cayley/pull/101) (in for the next binary release)
+[![Build Status](https://travis-ci.org/google/cayley.png?branch=master)](https://travis-ci.org/google/cayley) [Trello Board](https://trello.com/b/KioFZb5O)
 
 ## Features
 
@@ -27,9 +18,9 @@ Its goal is to be a part of the developer's toolbox where [Linked Data](http://l
   * JavaScript, with a [Gremlin](http://gremlindocs.com/)-inspired\* graph object.
   * (simplified) [MQL](https://developers.google.com/freebase/v1/mql-overview), for Freebase fans
 * Plays well with multiple backend stores:
-  * [LevelDB](http://code.google.com/p/leveldb/)
-  * [Bolt](http://github.com/boltdb/bolt)
-  * [MongoDB](http://mongodb.org) for distributed stores
+  * [LevelDB](https://github.com/google/leveldb)
+  * [Bolt](https://github.com/boltdb/bolt)
+  * [MongoDB](https://www.mongodb.org) for distributed stores
   * In-memory, ephemeral
 * Modular design; easy to extend with new languages and backends
 * Good test coverage
@@ -41,13 +32,18 @@ Rough performance testing shows that, on consumer hardware and an average disk, 
 
 ## Getting Started
 
-Grab the latest [release binary](http://github.com/google/cayley/releases) and extract it wherever you like.
+Grab the latest [release binary](https://github.com/google/cayley/releases) and extract it wherever you like.
 
 If you prefer to build from source, see the documentation on the wiki at [How to start hacking on Cayley](https://github.com/google/cayley/wiki/How-to-start-hacking-on-Cayley)
 
 `cd` to the directory and give it a quick test with:
 ```
-./cayley repl --dbpath=testdata.nq
+./cayley repl --dbpath=data/testdata.nq
+```
+
+To run the web frontend, replace the "repl" command with "http"
+```
+./cayley http --dbpath=data/testdata.nq
 ```
 
 You should see a `cayley>` REPL prompt. Go ahead and give it a try:
@@ -70,18 +66,30 @@ cayley> graph.Vertex("dani").All()
 cayley> graph.Vertex("dani").Out("follows").All()
 ```
 
+**Running the visualizer on the web frontend**
+
+To run the visualizer: click on visualize and enter:
+
+```
+// Visualize who dani follows.
+g.V("dani").Tag("source").Out("follows").Tag("target").All()
+```
+The visualizer expects to tag nodes as either "source" or "target."  Your source is represented as a blue node.
+While your target is represented as an orange node.
+The idea being that our node relationship goes from blue to orange (source to target).  
+
 **Sample Data**
 
 For somewhat more interesting data, a sample of 30k movies from Freebase comes in the checkout.
 
 ```
-./cayley repl --dbpath=30kmoviedata.nq.gz
+./cayley repl --dbpath=data/30kmoviedata.nq.gz
 ```
 
 To run the web frontend, replace the "repl" command with "http"
 
 ```
-./cayley http --dbpath=30kmoviedata.nq.gz
+./cayley http --dbpath=data/30kmoviedata.nq.gz
 ```
 
 And visit port 64210 on your machine, commonly [http://localhost:64210](http://localhost:64210)
@@ -144,10 +152,10 @@ There's more in the JavaScript API Documentation, but that should give you a fee
 
 ## Disclaimer
 
-Not a Google project, but created and maintained [by a Googler](http://github.com/barakmich), with permission from and assignment to Google, under the [Apache License, version 2.0](http://www.apache.org/licenses/LICENSE-2.0).
+Not a Google project, but created and maintained [by a Googler](https://github.com/barakmich), with permission from and assignment to Google, under the [Apache License, version 2.0](http://www.apache.org/licenses/LICENSE-2.0).
 
 ## Contact
 
 * Email list: [cayley-users at Google Groups](https://groups.google.com/forum/?hl=en#!forum/cayley-users)
-* Twitter: [@cayleygraph](http://twitter.com/cayleygraph)
+* Twitter: [@cayleygraph](https://twitter.com/cayleygraph)
 * IRC: [#cayley on Freenode](http://webchat.freenode.net/?channels=%23cayley&uio=d4)

@@ -12,26 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build appengine
-
-package main
+package internal
 
 import (
-	"github.com/barakmich/glog"
-
-	"github.com/google/cayley/config"
-	"github.com/google/cayley/db"
-	"github.com/google/cayley/graph"
-	"github.com/google/cayley/http"
-
-	_ "github.com/google/cayley/graph/memstore"
+	"bufio"
+	"bytes"
+	"compress/bzip2"
+	"compress/gzip"
+	"io"
 )
 
-func init() {
-	glog.SetToStderr(true)
-	cfg := config.ParseConfigFromFile("cayley_appengine.cfg")
-	qs, _ := graph.NewQuadStore("memstore", "", nil)
-	glog.Errorln(cfg)
-	db.Load(qs, cfg, cfg.DatabasePath)
-	http.SetupRoutes(qs, cfg)
+const (
+	gzipMagic  = "\x1f\x8b"
+	b2zipMagic = "BZh"
+)
+
+// Decompressor detects the file type of an io.Reader between
+// bzip, gzip, or raw quad file.
+func Decompressor(r io.Reader) (io.Reader, error) {
+	br := bufio.NewReader(r)
+	buf, err := br.Peek(3)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case bytes.Compare(buf[:2], []byte(gzipMagic)) == 0:
+		return gzip.NewReader(br)
+	case bytes.Compare(buf[:3], []byte(b2zipMagic)) == 0:
+		return bzip2.NewReader(br), nil
+	default:
+		return br, nil
+	}
 }

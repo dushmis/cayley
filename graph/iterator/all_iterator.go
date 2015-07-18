@@ -23,9 +23,6 @@ package iterator
 // the base iterators, and it helps just to see it here.
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/google/cayley/graph"
 )
 
@@ -58,7 +55,9 @@ func (it *Int64) Reset() {
 	it.at = it.min
 }
 
-func (it *Int64) Close() {}
+func (it *Int64) Close() error {
+	return nil
+}
 
 func (it *Int64) Clone() graph.Iterator {
 	out := NewInt64(it.min, it.max)
@@ -81,9 +80,12 @@ func (it *Int64) TagResults(dst map[string]graph.Value) {
 	}
 }
 
-// Prints the All iterator as just an "all".
-func (it *Int64) DebugString(indent int) string {
-	return fmt.Sprintf("%s(%s tags: %v)", strings.Repeat(" ", indent), it.Type(), it.tags.Tags())
+func (it *Int64) Describe() graph.Description {
+	return graph.Description{
+		UID:  it.UID(),
+		Type: it.Type(),
+		Tags: it.tags.Tags(),
+	}
 }
 
 // Next() on an Int64 all iterator is a simple incrementing counter.
@@ -103,9 +105,8 @@ func (it *Int64) Next() bool {
 	return graph.NextLogOut(it, val, true)
 }
 
-// DEPRECATED
-func (it *Int64) ResultTree() *graph.ResultTree {
-	return graph.NewResultTree(it.Result())
+func (it *Int64) Err() error {
+	return nil
 }
 
 func (it *Int64) Result() graph.Value {
@@ -160,3 +161,5 @@ func (it *Int64) Stats() graph.IteratorStats {
 		Contains:     it.runstats.Contains,
 	}
 }
+
+var _ graph.Nexter = &Int64{}

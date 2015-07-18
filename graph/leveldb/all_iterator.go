@@ -16,8 +16,6 @@ package leveldb
 
 import (
 	"bytes"
-	"fmt"
-	"strings"
 
 	ldbit "github.com/syndtr/goleveldb/leveldb/iterator"
 	"github.com/syndtr/goleveldb/leveldb/opt"
@@ -121,8 +119,8 @@ func (it *AllIterator) Next() bool {
 	return true
 }
 
-func (it *AllIterator) ResultTree() *graph.ResultTree {
-	return graph.NewResultTree(it.Result())
+func (it *AllIterator) Err() error {
+	return it.iter.Error()
 }
 
 func (it *AllIterator) Result() graph.Value {
@@ -143,11 +141,12 @@ func (it *AllIterator) Contains(v graph.Value) bool {
 	return true
 }
 
-func (it *AllIterator) Close() {
+func (it *AllIterator) Close() error {
 	if it.open {
 		it.iter.Release()
 		it.open = false
 	}
+	return nil
 }
 
 func (it *AllIterator) Size() (int64, bool) {
@@ -159,9 +158,15 @@ func (it *AllIterator) Size() (int64, bool) {
 	return int64(^uint64(0) >> 1), false
 }
 
-func (it *AllIterator) DebugString(indent int) string {
+func (it *AllIterator) Describe() graph.Description {
 	size, _ := it.Size()
-	return fmt.Sprintf("%s(%s tags: %v leveldb size:%d %s %p)", strings.Repeat(" ", indent), it.Type(), it.tags.Tags(), size, it.dir, it)
+	return graph.Description{
+		UID:       it.UID(),
+		Type:      it.Type(),
+		Tags:      it.tags.Tags(),
+		Size:      size,
+		Direction: it.dir,
+	}
 }
 
 func (it *AllIterator) Type() graph.Type { return graph.All }
@@ -179,3 +184,5 @@ func (it *AllIterator) Stats() graph.IteratorStats {
 		Size:         s,
 	}
 }
+
+var _ graph.Nexter = &AllIterator{}

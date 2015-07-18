@@ -38,16 +38,15 @@ func NewSession(qs graph.QuadStore) *Session {
 	return &m
 }
 
-func (s *Session) ToggleDebug() {
-	s.debug = !s.debug
+func (s *Session) Debug(ok bool) {
+	s.debug = ok
 }
 
-func (s *Session) GetQuery(input string, out chan map[string]interface{}) {
-	defer close(out)
+func (s *Session) ShapeOf(query string) (interface{}, error) {
 	var mqlQuery interface{}
-	err := json.Unmarshal([]byte(input), &mqlQuery)
+	err := json.Unmarshal([]byte(query), &mqlQuery)
 	if err != nil {
-		return
+		return nil, err
 	}
 	s.currentQuery = NewQuery(s)
 	s.currentQuery.BuildIteratorTree(mqlQuery)
@@ -59,10 +58,10 @@ func (s *Session) GetQuery(input string, out chan map[string]interface{}) {
 		nodes = append(nodes, n)
 	}
 	output["nodes"] = nodes
-	out <- output
+	return output, nil
 }
 
-func (s *Session) InputParses(input string) (query.ParseResult, error) {
+func (s *Session) Parse(input string) (query.ParseResult, error) {
 	var x interface{}
 	err := json.Unmarshal([]byte(input), &x)
 	if err != nil {
@@ -71,7 +70,7 @@ func (s *Session) InputParses(input string) (query.ParseResult, error) {
 	return query.Parsed, nil
 }
 
-func (s *Session) ExecInput(input string, c chan interface{}, _ int) {
+func (s *Session) Execute(input string, c chan interface{}, _ int) {
 	defer close(c)
 	var mqlQuery interface{}
 	err := json.Unmarshal([]byte(input), &mqlQuery)
@@ -85,7 +84,12 @@ func (s *Session) ExecInput(input string, c chan interface{}, _ int) {
 	}
 	it, _ := s.currentQuery.it.Optimize()
 	if glog.V(2) {
-		glog.V(2).Infoln(it.DebugString(0))
+		b, err := json.MarshalIndent(it.Describe(), "", "  ")
+		if err != nil {
+			glog.Infof("failed to format description: %v", err)
+		} else {
+			glog.Infof("%s", b)
+		}
 	}
 	for graph.Next(it) {
 		tags := make(map[string]graph.Value)
@@ -99,7 +103,7 @@ func (s *Session) ExecInput(input string, c chan interface{}, _ int) {
 	}
 }
 
-func (s *Session) ToText(result interface{}) string {
+func (s *Session) Format(result interface{}) string {
 	tags := result.(map[string]graph.Value)
 	out := fmt.Sprintln("****")
 	tagKeys := make([]string, len(tags))
@@ -122,11 +126,11 @@ func (s *Session) ToText(result interface{}) string {
 	return out
 }
 
-func (s *Session) BuildJSON(result interface{}) {
+func (s *Session) Collate(result interface{}) {
 	s.currentQuery.treeifyResult(result.(map[string]graph.Value))
 }
 
-func (s *Session) GetJSON() ([]interface{}, error) {
+func (s *Session) Results() (interface{}, error) {
 	s.currentQuery.buildResults()
 	if s.currentQuery.isError() {
 		return nil, s.currentQuery.err
@@ -134,7 +138,7 @@ func (s *Session) GetJSON() ([]interface{}, error) {
 	return s.currentQuery.results, nil
 }
 
-func (s *Session) ClearJSON() {
+func (s *Session) Clear() {
 	// Since we create a new Query underneath every query, clearing isn't necessary.
 	return
 }

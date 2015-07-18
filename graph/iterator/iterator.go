@@ -17,7 +17,6 @@ package iterator
 // Define the general iterator interface.
 
 import (
-	"strings"
 	"sync/atomic"
 
 	"github.com/google/cayley/graph"
@@ -78,21 +77,23 @@ func (it *Null) Type() graph.Type { return graph.Null }
 // Null has nothing it needs to do.
 func (it *Null) Optimize() (graph.Iterator, bool) { return it, false }
 
-// Print the null iterator.
-func (it *Null) DebugString(indent int) string {
-	return strings.Repeat(" ", indent) + "(null)"
+func (it *Null) Describe() graph.Description {
+	return graph.Description{
+		UID:  it.UID(),
+		Type: it.Type(),
+	}
 }
 
 func (it *Null) Next() bool {
 	return false
 }
 
-func (it *Null) Result() graph.Value {
+func (it *Null) Err() error {
 	return nil
 }
 
-func (it *Null) ResultTree() *graph.ResultTree {
-	return graph.NewResultTree(it.Result())
+func (it *Null) Result() graph.Value {
+	return nil
 }
 
 func (it *Null) SubIterators() []graph.Iterator {
@@ -109,9 +110,13 @@ func (it *Null) Size() (int64, bool) {
 
 func (it *Null) Reset() {}
 
-func (it *Null) Close() {}
+func (it *Null) Close() error {
+	return nil
+}
 
 // A null iterator costs nothing. Use it!
 func (it *Null) Stats() graph.IteratorStats {
 	return graph.IteratorStats{}
 }
+
+var _ graph.Nexter = &Null{}

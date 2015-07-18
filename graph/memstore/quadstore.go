@@ -15,7 +15,9 @@
 package memstore
 
 import (
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/barakmich/glog"
 
@@ -25,10 +27,16 @@ import (
 	"github.com/google/cayley/quad"
 )
 
+const QuadStoreType = "memstore"
+
 func init() {
-	graph.RegisterQuadStore("memstore", false, func(string, graph.Options) (graph.QuadStore, error) {
+	graph.RegisterQuadStore(QuadStoreType, false, func(string, graph.Options) (graph.QuadStore, error) {
 		return newQuadStore(), nil
-	}, nil)
+	}, nil, nil)
+}
+
+func cmp(a, b int64) int {
+	return int(a - b)
 }
 
 type QuadDirectionIndex struct {
@@ -65,7 +73,10 @@ func (qdi QuadDirectionIndex) Get(d quad.Direction, id int64) (*b.Tree, bool) {
 }
 
 type LogEntry struct {
-	graph.Delta
+	ID        int64
+	Quad      quad.Quad
+	Action    graph.Procedure
+	Timestamp time.Time
 	DeletedBy int64
 }
 
@@ -94,13 +105,22 @@ func newQuadStore() *QuadStore {
 	}
 }
 
-func (qs *QuadStore) ApplyDeltas(deltas []graph.Delta) error {
+func (qs *QuadStore) ApplyDeltas(deltas []graph.Delta, ignoreOpts graph.IgnoreOpts) error {
 	for _, d := range deltas {
 		var err error
-		if d.Action == graph.Add {
+		switch d.Action {
+		case graph.Add:
 			err = qs.AddDelta(d)
-		} else {
+			if err != nil && ignoreOpts.IgnoreDup {
+				err = nil
+			}
+		case graph.Delete:
 			err = qs.RemoveDelta(d)
+			if err != nil && ignoreOpts.IgnoreMissing {
+				err = nil
+			}
+		default:
+			err = errors.New("memstore: invalid action")
 		}
 		if err != nil {
 			return err
@@ -149,7 +169,11 @@ func (qs *QuadStore) AddDelta(d graph.Delta) error {
 		return graph.ErrQuadExists
 	}
 	qid := qs.nextQuadID
-	qs.log = append(qs.log, LogEntry{Delta: d})
+	qs.log = append(qs.log, LogEntry{
+		ID:        d.ID.Int(),
+		Quad:      d.Quad,
+		Action:    d.Action,
+		Timestamp: d.Timestamp})
 	qs.size++
 	qs.nextQuadID++
 
@@ -163,13 +187,7 @@ func (qs *QuadStore) AddDelta(d graph.Delta) error {
 			qs.revIDMap[qs.nextID] = sid
 			qs.nextID++
 		}
-	}
-
-	for dir := quad.Subject; dir <= quad.Label; dir++ {
-		if dir == quad.Label && d.Quad.Get(dir) == "" {
-			continue
-		}
-		id := qs.idMap[d.Quad.Get(dir)]
+		id := qs.idMap[sid]
 		tree := qs.index.Tree(dir, id)
 		tree.Set(qid, struct{}{})
 	}
@@ -185,7 +203,11 @@ func (qs *QuadStore) RemoveDelta(d graph.Delta) error {
 	}
 
 	quadID := qs.nextQuadID
-	qs.log = append(qs.log, LogEntry{Delta: d})
+	qs.log = append(qs.log, LogEntry{
+		ID:        d.ID.Int(),
+		Quad:      d.Quad,
+		Action:    d.Action,
+		Timestamp: d.Timestamp})
 	qs.log[prevQuadID].DeletedBy = quadID
 	qs.size--
 	qs.nextQuadID++
@@ -205,8 +227,8 @@ func (qs *QuadStore) QuadIterator(d quad.Direction, value graph.Value) graph.Ite
 	return &iterator.Null{}
 }
 
-func (qs *QuadStore) Horizon() int64 {
-	return qs.log[len(qs.log)-1].ID
+func (qs *QuadStore) Horizon() graph.PrimaryKey {
+	return graph.NewSequentialKey(qs.log[len(qs.log)-1].ID)
 }
 
 func (qs *QuadStore) Size() int64 {
@@ -248,3 +270,7 @@ func (qs *QuadStore) NodesAllIterator() graph.Iterator {
 }
 
 func (qs *QuadStore) Close() {}
+
+func (qs *QuadStore) Type() string {
+	return QuadStoreType
+}

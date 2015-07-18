@@ -26,7 +26,6 @@ import (
 
 	"github.com/barakmich/glog"
 	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/cache"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/util"
 
@@ -36,12 +35,13 @@ import (
 )
 
 func init() {
-	graph.RegisterQuadStore("leveldb", true, newQuadStore, createNewLevelDB)
+	graph.RegisterQuadStore(QuadStoreType, true, newQuadStore, createNewLevelDB, nil)
 }
 
 const (
 	DefaultCacheSize       = 2
 	DefaultWriteBufferSize = 20
+	QuadStoreType          = "leveldb"
 )
 
 var (
@@ -90,16 +90,22 @@ func newQuadStore(path string, options graph.Options) (graph.QuadStore, error) {
 	var err error
 	qs.path = path
 	cacheSize := DefaultCacheSize
-	if val, ok := options.IntKey("cache_size_mb"); ok {
+	val, ok, err := options.IntKey("cache_size_mb")
+	if err != nil {
+		return nil, err
+	} else if ok {
 		cacheSize = val
 	}
 	qs.dbOpts = &opt.Options{
-		BlockCache: cache.NewLRUCache(cacheSize * opt.MiB),
+		BlockCacheCapacity: cacheSize * opt.MiB,
 	}
 	qs.dbOpts.ErrorIfMissing = true
 
 	writeBufferSize := DefaultWriteBufferSize
-	if val, ok := options.IntKey("writeBufferSize"); ok {
+	val, ok, err = options.IntKey("writeBufferSize")
+	if err != nil {
+		return nil, err
+	} else if ok {
 		writeBufferSize = val
 	}
 	qs.dbOpts.WriteBuffer = writeBufferSize * opt.MiB
@@ -135,8 +141,8 @@ func (qs *QuadStore) Size() int64 {
 	return qs.size
 }
 
-func (qs *QuadStore) Horizon() int64 {
-	return qs.horizon
+func (qs *QuadStore) Horizon() graph.PrimaryKey {
+	return graph.NewSequentialKey(qs.horizon)
 }
 
 func hashOf(s string) []byte {
@@ -150,7 +156,7 @@ func hashOf(s string) []byte {
 }
 
 func (qs *QuadStore) createKeyFor(d [4]quad.Direction, q quad.Quad) []byte {
-	key := make([]byte, 0, 2+(hashSize*3))
+	key := make([]byte, 0, 2+(hashSize*4))
 	// TODO(kortschak) Remove dependence on String() method.
 	key = append(key, []byte{d[0].Prefix(), d[1].Prefix()}...)
 	key = append(key, hashOf(q.Get(d[0]))...)
@@ -180,18 +186,27 @@ var (
 	cps = [4]quad.Direction{quad.Label, quad.Predicate, quad.Subject, quad.Object}
 )
 
-func (qs *QuadStore) ApplyDeltas(deltas []graph.Delta) error {
+func (qs *QuadStore) ApplyDeltas(deltas []graph.Delta, ignoreOpts graph.IgnoreOpts) error {
 	batch := &leveldb.Batch{}
 	resizeMap := make(map[string]int64)
 	sizeChange := int64(0)
 	for _, d := range deltas {
+		if d.Action != graph.Add && d.Action != graph.Delete {
+			return errors.New("leveldb: invalid action")
+		}
 		bytes, err := json.Marshal(d)
 		if err != nil {
 			return err
 		}
 		batch.Put(keyFor(d), bytes)
-		err = qs.buildQuadWrite(batch, d.Quad, d.ID, d.Action == graph.Add)
+		err = qs.buildQuadWrite(batch, d.Quad, d.ID.Int(), d.Action == graph.Add)
 		if err != nil {
+			if err == graph.ErrQuadExists && ignoreOpts.IgnoreDup {
+				continue
+			}
+			if err == graph.ErrQuadNotExist && ignoreOpts.IgnoreMissing {
+				continue
+			}
 			return err
 		}
 		delta := int64(1)
@@ -205,7 +220,7 @@ func (qs *QuadStore) ApplyDeltas(deltas []graph.Delta) error {
 			resizeMap[d.Quad.Label] += delta
 		}
 		sizeChange += delta
-		qs.horizon = d.ID
+		qs.horizon = d.ID.Int()
 	}
 	for k, v := range resizeMap {
 		if v != 0 {
@@ -227,7 +242,7 @@ func (qs *QuadStore) ApplyDeltas(deltas []graph.Delta) error {
 func keyFor(d graph.Delta) []byte {
 	key := make([]byte, 0, 19)
 	key = append(key, 'd')
-	key = append(key, []byte(fmt.Sprintf("%018x", d.ID))...)
+	key = append(key, []byte(fmt.Sprintf("%018x", d.ID.Int()))...)
 	return key
 }
 
@@ -247,12 +262,17 @@ func (qs *QuadStore) buildQuadWrite(batch *leveldb.Batch, q quad.Quad, id int64,
 	} else {
 		entry.Quad = q
 	}
-	entry.History = append(entry.History, id)
 
-	if isAdd && len(entry.History)%2 == 0 {
-		glog.Error("Entry History is out of sync for", entry)
-		return errors.New("odd index history")
+	if isAdd && len(entry.History)%2 == 1 {
+		glog.Errorf("attempt to add existing quad %v: %#v", entry, q)
+		return graph.ErrQuadExists
 	}
+	if !isAdd && len(entry.History)%2 == 0 {
+		glog.Error("attempt to delete non-existent quad %v: %#c", entry, q)
+		return graph.ErrQuadNotExist
+	}
+
+	entry.History = append(entry.History, id)
 
 	bytes, err := json.Marshal(entry)
 	if err != nil {
@@ -481,4 +501,8 @@ func compareBytes(a, b graph.Value) bool {
 
 func (qs *QuadStore) FixedIterator() graph.FixedIterator {
 	return iterator.NewFixed(compareBytes)
+}
+
+func (qs *QuadStore) Type() string {
+	return QuadStoreType
 }

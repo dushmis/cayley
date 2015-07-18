@@ -168,12 +168,22 @@ func TestLoadDatabase(t *testing.T) {
 		t.Errorf("Could not convert from generic to LevelDB QuadStore")
 	}
 
+	//Test horizon
+	horizon := qs.Horizon()
+	if horizon.Int() != 0 {
+		t.Errorf("Unexpected horizon value, got:%d expect:0", horizon.Int())
+	}
+
 	w.AddQuadSet(makeQuadSet())
 	if s := qs.Size(); s != 11 {
 		t.Errorf("Unexpected quadstore size, got:%d expect:11", s)
 	}
 	if s := ts2.SizeOf(qs.ValueOf("B")); s != 5 {
 		t.Errorf("Unexpected quadstore size, got:%d expect:5", s)
+	}
+	horizon = qs.Horizon()
+	if horizon.Int() != 11 {
+		t.Errorf("Unexpected horizon value, got:%d expect:11", horizon.Int())
 	}
 
 	w.RemoveQuad(quad.Quad{
@@ -323,7 +333,7 @@ func TestSetIterator(t *testing.T) {
 	}
 	it.Reset()
 
-	and := iterator.NewAnd()
+	and := iterator.NewAnd(qs)
 	and.AddSubIterator(qs.QuadsAllIterator())
 	and.AddSubIterator(it)
 
@@ -343,7 +353,7 @@ func TestSetIterator(t *testing.T) {
 		t.Errorf("Failed to get expected results, got:%v expect:%v", got, expect)
 	}
 
-	and = iterator.NewAnd()
+	and = iterator.NewAnd(qs)
 	and.AddSubIterator(qs.QuadIterator(quad.Subject, qs.ValueOf("B")))
 	and.AddSubIterator(it)
 
@@ -382,7 +392,7 @@ func TestSetIterator(t *testing.T) {
 	it.Reset()
 
 	// Order is important
-	and = iterator.NewAnd()
+	and = iterator.NewAnd(qs)
 	and.AddSubIterator(qs.QuadIterator(quad.Subject, qs.ValueOf("B")))
 	and.AddSubIterator(it)
 
@@ -395,7 +405,7 @@ func TestSetIterator(t *testing.T) {
 	it.Reset()
 
 	// Order is important
-	and = iterator.NewAnd()
+	and = iterator.NewAnd(qs)
 	and.AddSubIterator(it)
 	and.AddSubIterator(qs.QuadIterator(quad.Subject, qs.ValueOf("B")))
 

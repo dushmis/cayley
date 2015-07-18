@@ -57,9 +57,9 @@ var testQueries = []struct {
 func TestMemstoreBackedSexp(t *testing.T) {
 	qs, _ := graph.NewQuadStore("memstore", "", nil)
 	w, _ := graph.NewQuadWriter("single", qs, nil)
-	it := BuildIteratorTreeForQuery(qs, "()")
-	if it.Type() != graph.Null {
-		t.Errorf(`Incorrect type for empty query, got:%q expect: "null"`, it.Type())
+	emptyIt := BuildIteratorTreeForQuery(qs, "()")
+	if emptyIt.Type() != graph.Null {
+		t.Errorf(`Incorrect type for empty query, got:%q expect: "null"`, emptyIt.Type())
 	}
 	for _, test := range testQueries {
 		if test.add.IsValid() {
@@ -89,7 +89,7 @@ func TestTreeConstraintParse(t *testing.T) {
 		"($a (:is :good))))"
 	it := BuildIteratorTreeForQuery(qs, query)
 	if it.Type() != graph.And {
-		t.Errorf("Odd iterator tree. Got: %s", it.DebugString(0))
+		t.Errorf("Odd iterator tree. Got: %#v", it.Describe())
 	}
 	if !graph.Next(it) {
 		t.Error("Got no results")
@@ -137,7 +137,7 @@ func TestMultipleConstraintParse(t *testing.T) {
 	)`
 	it := BuildIteratorTreeForQuery(qs, query)
 	if it.Type() != graph.And {
-		t.Errorf("Odd iterator tree. Got: %s", it.DebugString(0))
+		t.Errorf("Odd iterator tree. Got: %#v", it.Describe())
 	}
 	if !graph.Next(it) {
 		t.Error("Got no results")

@@ -17,8 +17,6 @@ package leveldb
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
-	"strings"
 
 	"github.com/barakmich/glog"
 	ldbit "github.com/syndtr/goleveldb/leveldb/iterator"
@@ -111,11 +109,12 @@ func (it *Iterator) Clone() graph.Iterator {
 	return out
 }
 
-func (it *Iterator) Close() {
+func (it *Iterator) Close() error {
 	if it.open {
 		it.iter.Release()
 		it.open = false
 	}
+	return nil
 }
 
 func (it *Iterator) isLiveValue(val []byte) bool {
@@ -140,6 +139,11 @@ func (it *Iterator) Next() bool {
 	}
 	if bytes.HasPrefix(it.iter.Key(), it.nextPrefix) {
 		if !it.isLiveValue(it.iter.Value()) {
+			ok := it.iter.Next()
+			if !ok {
+				it.Close()
+				return false
+			}
 			return it.Next()
 		}
 		out := make([]byte, len(it.iter.Key()))
@@ -156,8 +160,8 @@ func (it *Iterator) Next() bool {
 	return false
 }
 
-func (it *Iterator) ResultTree() *graph.ResultTree {
-	return graph.NewResultTree(it.Result())
+func (it *Iterator) Err() error {
+	return it.iter.Error()
 }
 
 func (it *Iterator) Result() graph.Value {
@@ -250,17 +254,16 @@ func (it *Iterator) Size() (int64, bool) {
 	return it.qs.SizeOf(Token(it.checkID)), true
 }
 
-func (it *Iterator) DebugString(indent int) string {
+func (it *Iterator) Describe() graph.Description {
 	size, _ := it.Size()
-	return fmt.Sprintf("%s(%s %d tags: %v dir: %s size:%d %s)",
-		strings.Repeat(" ", indent),
-		it.Type(),
-		it.UID(),
-		it.tags.Tags(),
-		it.dir,
-		size,
-		it.qs.NameOf(Token(it.checkID)),
-	)
+	return graph.Description{
+		UID:       it.UID(),
+		Name:      it.qs.NameOf(Token(it.checkID)),
+		Type:      it.Type(),
+		Tags:      it.tags.Tags(),
+		Size:      size,
+		Direction: it.dir,
+	}
 }
 
 var levelDBType graph.Type
@@ -286,3 +289,5 @@ func (it *Iterator) Stats() graph.IteratorStats {
 		Size:         s,
 	}
 }
+
+var _ graph.Nexter = &Iterator{}

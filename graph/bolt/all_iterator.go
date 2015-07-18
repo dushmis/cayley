@@ -17,7 +17,6 @@ package bolt
 import (
 	"bytes"
 	"fmt"
-	"strings"
 
 	"github.com/barakmich/glog"
 	"github.com/boltdb/bolt"
@@ -34,6 +33,7 @@ type AllIterator struct {
 	dir    quad.Direction
 	qs     *QuadStore
 	result *Token
+	err    error
 	buffer [][]byte
 	offset int
 	done   bool
@@ -122,6 +122,7 @@ func (it *AllIterator) Next() bool {
 		})
 		if err != nil {
 			glog.Error("Error nexting in database: ", err)
+			it.err = err
 			it.done = true
 			return false
 		}
@@ -135,8 +136,8 @@ func (it *AllIterator) Next() bool {
 	return true
 }
 
-func (it *AllIterator) ResultTree() *graph.ResultTree {
-	return graph.NewResultTree(it.Result())
+func (it *AllIterator) Err() error {
+	return it.err
 }
 
 func (it *AllIterator) Result() graph.Value {
@@ -169,19 +170,26 @@ func (it *AllIterator) Contains(v graph.Value) bool {
 	return true
 }
 
-func (it *AllIterator) Close() {
+func (it *AllIterator) Close() error {
 	it.result = nil
 	it.buffer = nil
 	it.done = true
+	return nil
 }
 
 func (it *AllIterator) Size() (int64, bool) {
 	return it.qs.size, true
 }
 
-func (it *AllIterator) DebugString(indent int) string {
+func (it *AllIterator) Describe() graph.Description {
 	size, _ := it.Size()
-	return fmt.Sprintf("%s(%s tags: %v bolt size:%d %s %p)", strings.Repeat(" ", indent), it.Type(), it.tags.Tags(), size, it.dir, it)
+	return graph.Description{
+		UID:       it.UID(),
+		Type:      it.Type(),
+		Tags:      it.tags.Tags(),
+		Size:      size,
+		Direction: it.dir,
+	}
 }
 
 func (it *AllIterator) Type() graph.Type { return graph.All }
@@ -199,3 +207,5 @@ func (it *AllIterator) Stats() graph.IteratorStats {
 		Size:         s,
 	}
 }
+
+var _ graph.Nexter = &AllIterator{}

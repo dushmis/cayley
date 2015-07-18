@@ -34,9 +34,6 @@ package iterator
 // Alternatively, can be seen as the dual of the LinksTo iterator.
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/barakmich/glog"
 
 	"github.com/google/cayley/graph"
@@ -55,6 +52,7 @@ type HasA struct {
 	resultIt  graph.Iterator
 	result    graph.Value
 	runstats  graph.IteratorStats
+	err       error
 }
 
 // Construct a new HasA iterator, given the quad subiterator, and the quad
@@ -123,20 +121,15 @@ func (it *HasA) TagResults(dst map[string]graph.Value) {
 	it.primaryIt.TagResults(dst)
 }
 
-// DEPRECATED Return results in a ResultTree.
-func (it *HasA) ResultTree() *graph.ResultTree {
-	tree := graph.NewResultTree(it.Result())
-	tree.AddSubtree(it.primaryIt.ResultTree())
-	return tree
-}
-
-// Print some information about this iterator.
-func (it *HasA) DebugString(indent int) string {
-	var tags string
-	for _, k := range it.tags.Tags() {
-		tags += fmt.Sprintf("%s;", k)
+func (it *HasA) Describe() graph.Description {
+	primary := it.primaryIt.Describe()
+	return graph.Description{
+		UID:       it.UID(),
+		Type:      it.Type(),
+		Tags:      it.tags.Tags(),
+		Direction: it.dir,
+		Iterator:  &primary,
 	}
-	return fmt.Sprintf("%s(%s %d tags:%s direction:%s\n%s)", strings.Repeat(" ", indent), it.Type(), it.UID(), tags, it.dir, it.primaryIt.DebugString(indent+4))
 }
 
 // Check a value against our internal iterator. In order to do this, we must first open a new
@@ -153,7 +146,11 @@ func (it *HasA) Contains(val graph.Value) bool {
 		it.resultIt.Close()
 	}
 	it.resultIt = it.qs.QuadIterator(it.dir, val)
-	return graph.ContainsLogOut(it, val, it.NextContains())
+	ok := it.NextContains()
+	if it.err != nil {
+		return false
+	}
+	return graph.ContainsLogOut(it, val, ok)
 }
 
 // NextContains() is shared code between Contains() and GetNextResult() -- calls next on the
@@ -171,6 +168,7 @@ func (it *HasA) NextContains() bool {
 			return true
 		}
 	}
+	it.err = it.resultIt.Err()
 	return false
 }
 
@@ -186,7 +184,15 @@ func (it *HasA) NextPath() bool {
 	if it.primaryIt.NextPath() {
 		return true
 	}
-	result := it.NextContains()
+	it.err = it.primaryIt.Err()
+	if it.err != nil {
+		return false
+	}
+
+	result := it.NextContains() // Sets it.err if there's an error
+	if it.err != nil {
+		return false
+	}
 	glog.V(4).Infoln("HASA", it.UID(), "NextPath Returns", result, "")
 	return result
 }
@@ -203,12 +209,17 @@ func (it *HasA) Next() bool {
 	it.resultIt = &Null{}
 
 	if !graph.Next(it.primaryIt) {
+		it.err = it.primaryIt.Err()
 		return graph.NextLogOut(it, 0, false)
 	}
 	tID := it.primaryIt.Result()
 	val := it.qs.QuadDirection(tID, it.dir)
 	it.result = val
 	return graph.NextLogOut(it, val, true)
+}
+
+func (it *HasA) Err() error {
+	return it.err
 }
 
 func (it *HasA) Result() graph.Value {
@@ -239,12 +250,19 @@ func (it *HasA) Stats() graph.IteratorStats {
 	}
 }
 
-// Close the subiterator, the result iterator (if any) and the HasA.
-func (it *HasA) Close() {
+// Close the subiterator, the result iterator (if any) and the HasA. It closes
+// all subiterators it can, but returns the first error it encounters.
+func (it *HasA) Close() error {
+	err := it.primaryIt.Close()
+
 	if it.resultIt != nil {
-		it.resultIt.Close()
+		_err := it.resultIt.Close()
+		if err == nil {
+			err = _err
+		}
 	}
-	it.primaryIt.Close()
+
+	return err
 }
 
 // Register this iterator as a HasA.
@@ -253,3 +271,5 @@ func (it *HasA) Type() graph.Type { return graph.HasA }
 func (it *HasA) Size() (int64, bool) {
 	return it.Stats().Size, false
 }
+
+var _ graph.Nexter = &HasA{}
